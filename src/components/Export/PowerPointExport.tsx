@@ -1,116 +1,85 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import pptxgen from 'pptxgenjs';
 import { useData } from '../../contexts/DataContext';
-import { Download, FileText, Image } from 'lucide-react';
+import { Download, FileText, Image, PieChart } from 'lucide-react';
+import ChartCard from '../Charts/ChartCard';
 
-const PowerPointExport: React.FC = () => {
+interface PowerPointExportProps {
+  chartImages: { [questionId: string]: string };
+}
+
+const PowerPointExport: React.FC<PowerPointExportProps> = ({ chartImages }) => {
   const { data, filteredData, selectedQuestions } = useData();
   const [exporting, setExporting] = useState(false);
   const [brandingImage, setBrandingImage] = useState<File | null>(null);
-  const [brandingColor, setBrandingColor] = useState('#2563eb'); // Default blue color
+  const [brandingColor, setBrandingColor] = useState('#2563eb');
   const [exportName, setExportName] = useState('Travel Survey Report');
-  
+  const exportChartRef = useRef<any>(null);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setBrandingImage(e.target.files[0]);
     }
   };
-  
+
+  // Example: get chart image for PPT export
+  const getExportChartImage = () => {
+    if (exportChartRef.current) {
+      // Chart.js v4: chartRef.current is the chart instance
+      return exportChartRef.current.toBase64Image();
+    }
+    return null;
+  };
+
   const exportToPowerPoint = async () => {
     setExporting(true);
-    
     try {
-      // Create a new presentation
       const pptx = new pptxgen();
-      
-      // Set presentation properties
       pptx.author = 'Travel Survey Dashboard';
       pptx.title = exportName;
-      
-      // Create a base master slide with branding
+
       pptx.defineSlideMaster({
         title: 'BRANDED_SLIDE',
         background: { color: '#FFFFFF' },
         objects: [
-          // Bottom bar with branding color
-          { rect: { x: 0, y: '90%', w: '100%', h: '10%', fill: { color: brandingColor } } },
-          // Add title placeholder
-          {
-            text: {
-              text: 'TITLE_PLACEHOLDER',
-              options: {
-                x: 0.5,
-                y: 0.1,
-                w: '95%',
-                h: 0.5,
-                align: 'center',
-                fontSize: 18,
-                bold: true,
-                color: '#333333'
-              }
-            }
-          }
+          { rect: { x: 0, y: '90%', w: '100%', h: '10%', fill: { color: brandingColor } } }
         ]
       });
-      
-      // Add title slide
+
+      // Title slide
       const slide1 = pptx.addSlide({ masterName: 'BRANDED_SLIDE' });
-      
-      // Add title
       slide1.addText(exportName, {
-        x: 0.5,
-        y: 0.3,
-        w: '95%',
-        h: 1.0,
-        fontSize: 24,
-        color: '#333333',
-        bold: true,
-        align: 'center'
+        x: 0.5, y: 0.3, w: '95%', h: 1.0,
+        fontSize: 24, color: '#333333', bold: true, align: 'center'
       });
-      
-      // Add date
       slide1.addText(`Generated on ${new Date().toLocaleDateString()}`, {
-        x: 0.5,
-        y: 1.3,
-        w: '95%',
-        h: 0.3,
-        fontSize: 14,
-        color: '#666666',
-        align: 'center'
+        x: 0.5, y: 1.3, w: '95%', h: 0.3,
+        fontSize: 14, color: '#666666', align: 'center'
       });
-      
-      // Add branding image if available
+
+      // Add branding image (logo) if available
       if (brandingImage) {
         const reader = new FileReader();
-        reader.onload = (e) => {
-          if (e.target && e.target.result) {
-            slide1.addImage({
-              data: e.target.result as string,
-              x: 4,
-              y: 5,
-              w: 2,
-              h: 1
-            });
-          }
-        };
+        const imageLoaded = new Promise<string>((resolve) => {
+          reader.onload = (e) => resolve(e.target?.result as string);
+        });
         reader.readAsDataURL(brandingImage);
+        const imgData = await imageLoaded;
+        slide1.addImage({
+          data: imgData,
+          x: 7.5, // right bottom corner
+          y: 5.2,
+          w: 1.5,
+          h: 0.8
+        });
       }
-      
-      // Add summary slide
+
+      // Summary slide
       const slide2 = pptx.addSlide({ masterName: 'BRANDED_SLIDE' });
-      
       slide2.addText('Survey Overview', {
-        x: 0.5,
-        y: 0.3,
-        w: '95%',
-        h: 0.5,
-        fontSize: 18,
-        color: '#333333',
-        bold: true,
-        align: 'center'
+        x: 0.5, y: 0.3, w: '95%', h: 0.5,
+        fontSize: 18, color: '#333333', bold: true, align: 'center'
       });
-      
-      // Add summary details
       slide2.addText([
         { text: 'Total Responses: ', options: { bold: true } },
         { text: `${data.responses.length}` },
@@ -119,71 +88,49 @@ const PowerPointExport: React.FC = () => {
         { text: '\nSelected Questions: ', options: { bold: true } },
         { text: `${selectedQuestions.length}` }
       ], {
-        x: 0.5,
-        y: 1.0,
-        w: '95%',
-        h: 2.0,
-        fontSize: 14,
-        color: '#333333',
-        align: 'center'
+        x: 0.5, y: 1.0, w: '95%', h: 2.0,
+        fontSize: 14, color: '#333333', align: 'center'
       });
-      
-      // Add individual question slides
-      selectedQuestions.forEach(questionId => {
-        const question = data.questions.find(q => q.id === questionId);
-        if (!question) return;
-        
+
+      // Slides for each selected question
+      for (const qid of selectedQuestions) {
+        const question = data.questions.find(q => q.id === qid);
+        if (!question) continue;
         const slide = pptx.addSlide({ masterName: 'BRANDED_SLIDE' });
-        
-        // Add question text
         slide.addText(`${question.id}: ${question.text}`, {
-          x: 0.5,
-          y: 0.3,
-          w: '95%',
-          h: 0.5,
-          fontSize: 16,
-          color: '#333333',
-          bold: true,
-          align: 'center'
+          x: 0.5, y: 0.3, w: '95%', h: 0.5,
+          fontSize: 16, color: '#333333', bold: true, align: 'center'
         });
-        
-        // Add a placeholder for the chart
-        // In a real implementation, you would generate an image of the chart and insert it
-        slide.addText('Chart will be inserted here in the actual export', {
-          x: 1.5,
-          y: 1.0,
-          w: 7,
-          h: 4,
-          fontSize: 14,
-          color: '#666666',
-          align: 'center',
-          valign: 'middle',
-          fill: { color: '#F5F5F5' }
-        });
-        
-        // Add notes about the data
+
+        // Use the correct aspect ratio image for PPT
+        const chartImage = chartImages[qid] || getExportChartImage();
+        if (chartImage) {
+          slide.addImage({
+            data: chartImage,
+            x: 1, y: 1, w: 8, h: 6 // 4:3 aspect ratio, centered with margin
+          });
+        } else {
+          slide.addText('Chart not available', {
+            x: 1.5, y: 1.0, w: 7, h: 4,
+            fontSize: 14, color: '#666666', align: 'center', valign: 'middle',
+            fill: { color: '#F5F5F5' }
+          });
+        }
+
         slide.addText(`Based on ${filteredData.responses.length} responses`, {
-          x: 0.5,
-          y: 5.2,
-          w: '95%',
-          h: 0.3,
-          fontSize: 12,
-          color: '#666666',
-          align: 'center',
-          italic: true
+          x: 0.5, y: 5.2, w: '95%', h: 0.3,
+          fontSize: 12, color: '#666666', align: 'center', italic: true
         });
-      });
-      
-      // Save the presentation
-      pptx.writeFile({ fileName: `${exportName.replace(/\s+/g, '_')}.pptx` });
+      }
+
+      await pptx.writeFile({ fileName: `${exportName.replace(/\s+/g, '_')}.pptx` });
     } catch (error) {
-      console.error('Error exporting to PowerPoint:', error);
       alert('Error exporting to PowerPoint. Please try again.');
     } finally {
       setExporting(false);
     }
   };
-  
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -193,7 +140,7 @@ const PowerPointExport: React.FC = () => {
           You can customize the branding and appearance of the presentation.
         </p>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div>
@@ -208,7 +155,7 @@ const PowerPointExport: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-          
+
           <div>
             <label htmlFor="brandingColor" className="block text-sm font-medium text-gray-700 mb-1">
               Branding Color
@@ -229,7 +176,7 @@ const PowerPointExport: React.FC = () => {
               />
             </div>
           </div>
-          
+
           <div>
             <label htmlFor="brandingImage" className="block text-sm font-medium text-gray-700 mb-1">
               Company Logo (optional)
@@ -257,38 +204,39 @@ const PowerPointExport: React.FC = () => {
             </p>
           </div>
         </div>
-        
+
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <h3 className="font-medium text-gray-800 mb-3">Export Preview</h3>
-          
           <div className="bg-white border border-gray-300 rounded shadow-sm aspect-[4/3] mb-4 relative overflow-hidden">
-            {/* Simple PowerPoint slide preview */}
             <div className="h-full flex flex-col">
               <div className="flex-grow p-4 flex flex-col items-center justify-center">
-                <div className="w-3/4 h-2 bg-gray-200 rounded mb-2"></div>
-                <div className="w-1/2 h-2 bg-gray-200 rounded mb-6"></div>
-                
-                <div className="w-full flex justify-center">
-                  <div className="w-28 h-28 rounded-full border-4 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
-                    <PieChart size={40} />
+                {/* Title preview */}
+                <div className="w-full text-center mb-2">
+                  <span className="text-lg font-bold text-gray-700">{exportName || "Travel Survey Report"}</span>
+                </div>
+                {/* Chart preview */}
+                <div className="w-full flex justify-center mb-4">
+                  <div className="w-28 h-28 rounded-full border-4 border-dashed border-blue-300 flex items-center justify-center bg-blue-50">
+                    <PieChart size={40} className="text-blue-500" />
                   </div>
                 </div>
+                {/* Subtitle */}
+                <div className="w-full text-center">
+                  <span className="text-sm text-gray-500">Charts and insights for your selected questions</span>
+                </div>
               </div>
-              
-              <div 
-                className="h-8 w-full" 
-                style={{ backgroundColor: brandingColor }}
-              ></div>
+              {/* Branding bar */}
+              <div className="h-8 w-full" style={{ backgroundColor: brandingColor }}></div>
             </div>
-            
             {/* Logo preview */}
             {brandingImage && (
-              <div className="absolute bottom-10 right-4 w-16 h-8 bg-gray-100 flex items-center justify-center">
-                <Image size={16} className="text-gray-400" />
-              </div>
+              <img
+                src={URL.createObjectURL(brandingImage)}
+                alt="Logo preview"
+                className="absolute bottom-10 right-4 w-32 h-16 object-contain bg-white rounded shadow"
+              />
             )}
           </div>
-          
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-600">Selected questions:</span>
@@ -301,7 +249,7 @@ const PowerPointExport: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="pt-4 border-t border-gray-200">
         <div className="flex items-start">
           <div className="mr-4 bg-blue-100 rounded-lg p-2">
@@ -319,7 +267,7 @@ const PowerPointExport: React.FC = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="flex justify-end">
         <button 
           onClick={exportToPowerPoint}
@@ -342,6 +290,20 @@ const PowerPointExport: React.FC = () => {
             </>
           )}
         </button>
+      </div>
+
+      {/* Hidden export chart for PPTX */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        {selectedQuestions.length > 0 && (
+          <ChartCard
+            ref={exportChartRef}
+            question={data.questions.find(q => q.id === selectedQuestions[0])}
+            data={filteredData}
+            exportMode={true}
+            width={800}
+            height={600}
+          />
+        )}
       </div>
     </div>
   );

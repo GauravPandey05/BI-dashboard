@@ -39,7 +39,18 @@ const DataUploader: React.FC = () => {
         id: row.id || `Q${index + 1}`,
         text: row.text || `Question ${index + 1}`,
         type: row.type || 'single_choice',
-        choices: row.choices ? JSON.parse(row.choices) : generateDefaultChoices(index)
+        choices: (() => {
+          if (!row.choices) return generateDefaultChoices(index);
+          try {
+            // Try to parse as JSON
+            return JSON.parse(row.choices);
+          } catch {
+            // Fallback: split by semicolon
+            return String(row.choices)
+              .split(';')
+              .map((c: string, i: number) => ({ id: c.trim(), text: c.trim() }));
+          }
+        })()
       }));
       
       // Process responses
@@ -187,6 +198,21 @@ const DataUploader: React.FC = () => {
               </p>
             </div>
           </div>
+        </div>
+      )}
+      
+      {uploadStatus && uploadStatus.success && (
+        <div className="flex justify-end mt-2">
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            onClick={() => {
+              setUploadStatus(null);
+              setPreview(null);
+              // If you use a modal, call a prop like onClose() here
+            }}
+          >
+            Done
+          </button>
         </div>
       )}
       

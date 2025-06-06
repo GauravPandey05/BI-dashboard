@@ -1,20 +1,46 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { MessageSquare } from 'lucide-react';
+import { useData } from '../../contexts/DataContext';
 import FilterPanel from './FilterPanel';
 import QuestionSelector from './QuestionSelector';
 import ChartGrid from '../Charts/ChartGrid';
 import PowerPointExport from '../Export/PowerPointExport';
 import Chatbot from '../Chatbot/Chatbot';
-import { useData } from '../../contexts/DataContext';
-import { useState } from 'react';
-import { MessageSquare } from 'lucide-react';
 
-const Dashboard: React.FC = () => {
-  const { selectedQuestions } = useData();
+interface DashboardProps {
+  setExportHandler?: (handler: () => void) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ setExportHandler }) => {
+  const { selectedQuestions, data, filteredData } = useData();
   const [showChatbot, setShowChatbot] = useState(false);
-  const [activeTab, setActiveTab] = useState('charts');
+  const [activeTab, setActiveTab] = useState('charts'); // Default to 'charts'
+  const [chartImages, setChartImages] = useState<{ [questionId: string]: string }>({});
+
+  // Handler to collect chart images from ChartCard
+  const handleChartImageReady = (questionId: string, dataUrl: string) => {
+    setChartImages(prev => ({ ...prev, [questionId]: dataUrl }));
+  };
+
+  // Handler to switch to export tab and scroll to export section
+  const handleExportClick = () => {
+    setActiveTab('export');
+    setTimeout(() => {
+      const exportSection = document.getElementById('export-section');
+      if (exportSection) {
+        exportSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 100); // Wait for tab content to render
+  };
+
+  // Register the export handler with parent, but don't call it here!
+  useEffect(() => {
+    if (setExportHandler) setExportHandler(() => handleExportClick);
+  }, [setExportHandler]);
 
   return (
     <div className="flex-grow p-6 relative">
+
       <div className="mb-6">
         <div className="bg-white rounded-lg shadow p-4 w-full">
           <FilterPanel />
@@ -58,9 +84,15 @@ const Dashboard: React.FC = () => {
         </div>
         
         <div className="p-4">
-          {activeTab === 'charts' && selectedQuestions.length > 0 && <ChartGrid />}
+          {activeTab === 'charts' && selectedQuestions.length > 0 && (
+            <ChartGrid onChartImageReady={handleChartImageReady} />
+          )}
           {activeTab === 'questions' && <QuestionSelector />}
-          {activeTab === 'export' && <PowerPointExport />}
+          {activeTab === 'export' && (
+            <div id="export-section">
+              <PowerPointExport chartImages={chartImages} />
+            </div>
+          )}
           {activeTab === 'charts' && selectedQuestions.length === 0 && (
             <div className="text-center py-10">
               <h3 className="text-lg font-medium text-gray-700 mb-2">No questions selected</h3>
@@ -99,6 +131,8 @@ const Dashboard: React.FC = () => {
           <Chatbot onClose={() => setShowChatbot(false)} />
         </div>
       )}
+
+      
     </div>
   );
 };

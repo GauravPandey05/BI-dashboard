@@ -1,5 +1,4 @@
-import React, { useState, useMemo } from 'react';
-import { Question, SurveyData, Response } from '../../types';
+import React, { useState, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Pie, Bar } from 'react-chartjs-2';
 import { 
   Chart as ChartJS, 
@@ -25,8 +24,12 @@ ChartJS.register(
 );
 
 interface ChartCardProps {
-  question: Question;
-  data: SurveyData;
+  question: any;
+  data: any;
+  onChartImageReady?: (questionId: string, dataUrl: string) => void;
+  exportMode?: boolean;
+  width?: number;
+  height?: number;
 }
 
 const CHART_COLORS = [
@@ -42,29 +45,46 @@ const CHART_COLORS = [
   '#7c3aed', // violet-600
 ];
 
-const ChartCard: React.FC<ChartCardProps> = ({ question, data }) => {
+// Forward ref to allow parent to call toBase64Image
+const ChartCard = forwardRef<any, ChartCardProps>(({
+  question,
+  data,
+  onChartImageReady,
+  exportMode = false,
+  width = 400,
+  height = 300,
+}, ref) => {
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
   const [showInfo, setShowInfo] = useState(false);
-  
+
+  // Chart ref for image export
+  const chartRef = useRef<any>(null);
+  const exportTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Expose toBase64Image to parent via ref
+  useImperativeHandle(ref, () => ({
+    toBase64Image: () => chartRef.current?.toBase64Image?.()
+  }));
+
   // Compute statistics from the data
   const stats = useMemo(() => {
     if (!question.choices) return { counts: {}, total: 0, labels: [], dataset: [] };
-    
+
     const counts: Record<string, number> = {};
     let total = 0;
-    
+
     // Initialize counts for all choices
-    question.choices.forEach(choice => {
+    question.choices.forEach((choice: any) => {
       counts[choice.id] = 0;
     });
-    
+
     // Count responses
-    data.responses.forEach((response: Response) => {
+    data.responses.forEach((response: any) => {
       const answer = response.answers[question.id];
-      
+
       if (Array.isArray(answer)) {
         // For multiple choice questions
-        answer.forEach(choice => {
+        answer.forEach((choice: any) => {
           counts[choice] = (counts[choice] || 0) + 1 * response.weight;
           total += response.weight;
         });
@@ -81,13 +101,13 @@ const ChartCard: React.FC<ChartCardProps> = ({ question, data }) => {
         total += response.weight;
       }
     });
-    
+
     // Get labels and data for chart
     const labels: string[] = [];
     const dataset: number[] = [];
-    
+
     if (question.choices) {
-      question.choices.forEach(choice => {
+      question.choices.forEach((choice: any) => {
         if (counts[choice.id] > 0) {
           labels.push(choice.text);
           dataset.push(counts[choice.id]);
@@ -96,29 +116,31 @@ const ChartCard: React.FC<ChartCardProps> = ({ question, data }) => {
     } else {
       Object.entries(counts).forEach(([key, value]) => {
         labels.push(key);
-        dataset.push(value);
+        dataset.push(value as number);
       });
     }
-    
+
     return { counts, total, labels, dataset };
   }, [question, data]);
-  
+
   // Prepare chart data
   const chartData = {
     labels: stats.labels,
     datasets: [
       {
+        label: 'Responses',
         data: stats.dataset,
         backgroundColor: CHART_COLORS.slice(0, stats.labels.length),
         hoverBackgroundColor: CHART_COLORS.slice(0, stats.labels.length).map(color => color + 'dd'),
       },
     ],
   };
-  
+
   // Chart options
   const chartOptions = {
     plugins: {
       legend: {
+        display: true,
         position: 'right' as const,
         labels: {
           boxWidth: 15,
@@ -140,23 +162,62 @@ const ChartCard: React.FC<ChartCardProps> = ({ question, data }) => {
     },
     maintainAspectRatio: false,
   };
-  
+
   // Bar chart specific options
   const barOptions = {
     ...chartOptions,
+    indexAxis: 'y' as const,
     scales: {
-      y: {
+      x: {
         beginAtZero: true,
         ticks: {
-          callback: function(value: number) {
-            return Math.round((value / stats.total) * 100) + '%';
+          callback: function(tickValue: string | number) {
+            const numericValue = typeof tickValue === 'number' ? tickValue : Number(tickValue);
+            return Math.round((numericValue / stats.total) * 100) + '%';
           }
         }
       }
-    },
-    indexAxis: 'y' as const
+    }
   };
-  
+
+  // Export chart image when chartType or data changes
+  useEffect(() => {
+    if (chartRef.current && onChartImageReady && stats.total > 0) {
+      if (exportTimeout.current) clearTimeout(exportTimeout.current);
+      exportTimeout.current = setTimeout(() => {
+        const dataUrl = chartRef.current.toBase64Image();
+        onChartImageReady(question.id, dataUrl);
+      }, 300);
+    }
+    return () => {
+      if (exportTimeout.current) clearTimeout(exportTimeout.current);
+    };
+  }, [chartType, chartData, onChartImageReady, question.id, stats.total]);
+
+  // If exportMode, call onChartImageReady after render
+  useEffect(() => {
+    if (exportMode && chartRef.current && onChartImageReady) {
+      const chartInstance = chartRef.current;
+      const dataUrl = chartInstance.toBase64Image
+        ? chartInstance.toBase64Image()
+        : chartInstance?.chartInstance?.toBase64Image?.();
+      if (dataUrl) {
+        onChartImageReady(question.id, dataUrl);
+      }
+    }
+  }, [exportMode, chartRef, onChartImageReady, question?.id]);
+
+  // (Optional) Export Image Button
+  const handleExportChart = () => {
+    if (chartRef.current) {
+      const imgData = chartRef.current.toBase64Image();
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = `${question.text}.png`;
+      link.click();
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-md">
       <div className="p-4 border-b border-gray-100">
@@ -196,19 +257,48 @@ const ChartCard: React.FC<ChartCardProps> = ({ question, data }) => {
       
       <div className="p-4">
         {stats.total > 0 ? (
-          <div className="h-60">
+          <div
+            style={
+              exportMode
+                ? { width, height, background: "#fff" }
+                : {}
+            }
+            className={exportMode ? "" : "h-80 flex items-center justify-center"}
+          >
             {chartType === 'pie' ? (
-              <Pie data={chartData} options={chartOptions} />
+              <Pie
+                ref={chartRef}
+                data={chartData}
+                options={{
+                  ...chartOptions,
+                  maintainAspectRatio: false,
+                }}
+                width={width}
+                height={height}
+              />
             ) : (
-              <Bar data={chartData} options={barOptions} />
+              <Bar
+                ref={chartRef}
+                data={chartData}
+                options={{
+                  ...barOptions,
+                  maintainAspectRatio: false,
+                }}
+              />
             )}
           </div>
         ) : (
-          <div className="h-60 flex items-center justify-center text-gray-400">
+          <div className="h-80 flex items-center justify-center text-gray-400">
             No data available for this question
           </div>
         )}
-        
+
+        {chartType === 'pie' && (
+          <div className="mb-2 text-xs text-blue-500 text-center">
+            Tip: Click on a legend item to hide/show that section of the pie chart.
+          </div>
+        )}
+
         {showInfo && (
           <div className="mt-4 p-3 bg-gray-50 rounded-md text-xs text-gray-600">
             <h4 className="font-medium mb-1">Summary</h4>
@@ -230,14 +320,18 @@ const ChartCard: React.FC<ChartCardProps> = ({ question, data }) => {
           <div className="text-xs text-gray-500">
             <span className="font-medium">Filtered:</span> {data.responses.length}
           </div>
-          <button className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1">
-            <Download size={12} />
-            <span>Export Chart</span>
+          <button
+            onClick={handleExportChart}
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+            title="Export chart as image"
+          >
+            <Download size={14} />
+            Export Image
           </button>
         </div>
       </div>
     </div>
   );
-};
+});
 
-export default ChartCard;
+export default React.memo(ChartCard);

@@ -3,13 +3,13 @@ import { Home, BarChart3, PieChart, FileDown, PaletteIcon, LogOut, Upload } from
 import { useData } from '../../contexts/DataContext';
 import DataUploader from '../DataUpload/DataUploader';
 
-const DashboardHeader: React.FC = () => {
+const DashboardHeader: React.FC<{ onExportClick?: () => void }> = ({ onExportClick }) => {
   const { data, filteredData } = useData();
   const [showUploader, setShowUploader] = useState(false);
-  
+
   const totalResponses = data.responses.length;
   const filteredResponses = filteredData.responses.length;
-  
+
   return (
     <header className="bg-white border-b border-gray-200">
       <div className="px-6 py-3 flex justify-between items-center">
@@ -17,7 +17,7 @@ const DashboardHeader: React.FC = () => {
           <BarChart3 className="h-6 w-6 text-blue-600" />
           <h1 className="text-xl font-semibold text-gray-800">Travel Survey Dashboard</h1>
         </div>
-        
+
         <div className="text-sm text-gray-500">
           {filteredResponses === totalResponses ? (
             <span>Showing all {totalResponses} responses</span>
@@ -25,7 +25,7 @@ const DashboardHeader: React.FC = () => {
             <span>Showing {filteredResponses} of {totalResponses} responses</span>
           )}
         </div>
-        
+
         <div className="flex items-center space-x-4">
           <button className="text-gray-600 hover:text-gray-900 flex items-center gap-1">
             <Home size={18} />
@@ -39,7 +39,10 @@ const DashboardHeader: React.FC = () => {
             <PaletteIcon size={18} />
             <span className="hidden md:inline">Color Palette</span>
           </button>
-          <button className="text-gray-600 hover:text-gray-900 flex items-center gap-1">
+          <button
+            className="text-gray-600 hover:text-gray-900 flex items-center gap-1"
+            onClick={onExportClick}
+          >
             <FileDown size={18} />
             <span className="hidden md:inline">Export</span>
           </button>
@@ -56,7 +59,7 @@ const DashboardHeader: React.FC = () => {
           </button>
         </div>
       </div>
-      
+
       <div className="px-6 py-2 bg-gray-50 border-t border-b border-gray-200 text-xs text-gray-500">
         <div className="flex items-center space-x-2">
           <span>Dashboard</span>

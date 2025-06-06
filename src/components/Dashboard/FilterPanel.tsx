@@ -2,23 +2,31 @@ import React, { useState } from 'react';
 import { ChevronDown, Check, X } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
+// Helper to sort age groups
+const sortAgeGroups = (groups: string[]) => {
+  const order = ['18-24', '25-34', '35-44', '45-54', '55+'];
+  return [...groups].sort((a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+};
+
 const FilterPanel: React.FC = () => {
   const { filters, selectedFilters, setSelectedFilters, applyFilters, resetFilters } = useData();
-  
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  
+
+  // Use plural keys everywhere for consistency
   const toggleDropdown = (dropdown: string) => {
-    if (openDropdown === dropdown) {
-      setOpenDropdown(null);
-    } else {
-      setOpenDropdown(dropdown);
-    }
+    setOpenDropdown(openDropdown === dropdown ? null : dropdown);
   };
-  
+
   const handleFilterChange = (filterType: keyof typeof selectedFilters, value: string) => {
     setSelectedFilters(prev => {
       const currentFilters = [...prev[filterType]];
-      
       if (currentFilters.includes(value)) {
         return {
           ...prev,
@@ -32,11 +40,11 @@ const FilterPanel: React.FC = () => {
       }
     });
   };
-  
+
   const getFilterCount = (filterType: keyof typeof selectedFilters): number => {
     return selectedFilters[filterType].length;
   };
-  
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold text-gray-800">Filters</h2>
@@ -45,9 +53,9 @@ const FilterPanel: React.FC = () => {
         {/* Age Group Filter */}
         <div className="relative">
           <button
-            onClick={() => toggleDropdown('ageGroup')}
+            onClick={() => toggleDropdown('ageGroups')}
             className={`w-full flex items-center justify-between px-4 py-2 text-left text-sm rounded-md border ${
-              openDropdown === 'ageGroup' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
+              openDropdown === 'ageGroups' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
             } ${getFilterCount('ageGroups') > 0 ? 'bg-blue-50' : 'bg-white'}`}
           >
             <span>
@@ -58,13 +66,13 @@ const FilterPanel: React.FC = () => {
                 </span>
               )}
             </span>
-            <ChevronDown className={`h-4 w-4 transition-transform ${openDropdown === 'ageGroup' ? 'transform rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 transition-transform ${openDropdown === 'ageGroups' ? 'transform rotate-180' : ''}`} />
           </button>
           
-          {openDropdown === 'ageGroup' && (
+          {openDropdown === 'ageGroups' && (
             <div className="absolute z-10 mt-1 w-full rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 max-h-60 overflow-auto">
               <div className="py-1">
-                {filters.ageGroups.map(ageGroup => (
+                {sortAgeGroups(filters.ageGroups).map(ageGroup => (
                   <div
                     key={ageGroup}
                     onClick={() => handleFilterChange('ageGroups', ageGroup)}
@@ -90,9 +98,9 @@ const FilterPanel: React.FC = () => {
         {/* Gender Filter */}
         <div className="relative">
           <button
-            onClick={() => toggleDropdown('gender')}
+            onClick={() => toggleDropdown('genders')}
             className={`w-full flex items-center justify-between px-4 py-2 text-left text-sm rounded-md border ${
-              openDropdown === 'gender' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
+              openDropdown === 'genders' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
             } ${getFilterCount('genders') > 0 ? 'bg-blue-50' : 'bg-white'}`}
           >
             <span>
@@ -103,10 +111,10 @@ const FilterPanel: React.FC = () => {
                 </span>
               )}
             </span>
-            <ChevronDown className={`h-4 w-4 transition-transform ${openDropdown === 'gender' ? 'transform rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 transition-transform ${openDropdown === 'genders' ? 'transform rotate-180' : ''}`} />
           </button>
           
-          {openDropdown === 'gender' && (
+          {openDropdown === 'genders' && (
             <div className="absolute z-10 mt-1 w-full rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 max-h-60 overflow-auto">
               <div className="py-1">
                 {filters.genders.map(gender => (
@@ -135,9 +143,9 @@ const FilterPanel: React.FC = () => {
         {/* Family Composition Filter */}
         <div className="relative">
           <button
-            onClick={() => toggleDropdown('familyComposition')}
+            onClick={() => toggleDropdown('familyCompositions')}
             className={`w-full flex items-center justify-between px-4 py-2 text-left text-sm rounded-md border ${
-              openDropdown === 'familyComposition' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
+              openDropdown === 'familyCompositions' ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
             } ${getFilterCount('familyCompositions') > 0 ? 'bg-blue-50' : 'bg-white'}`}
           >
             <span>
@@ -148,10 +156,10 @@ const FilterPanel: React.FC = () => {
                 </span>
               )}
             </span>
-            <ChevronDown className={`h-4 w-4 transition-transform ${openDropdown === 'familyComposition' ? 'transform rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 transition-transform ${openDropdown === 'familyCompositions' ? 'transform rotate-180' : ''}`} />
           </button>
           
-          {openDropdown === 'familyComposition' && (
+          {openDropdown === 'familyCompositions' && (
             <div className="absolute z-10 mt-1 w-full rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 max-h-60 overflow-auto">
               <div className="py-1">
                 {filters.familyCompositions.map(composition => (
@@ -181,7 +189,7 @@ const FilterPanel: React.FC = () => {
       {/* Applied Filters */}
       <div className="flex flex-wrap gap-2 mt-4">
         {Object.entries(selectedFilters).map(([filterType, values]) => 
-          values.map(value => (
+          (values as string[]).map(value => (
             <div 
               key={`${filterType}-${value}`}
               className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"

@@ -2,7 +2,11 @@ import React from 'react';
 import { useData } from '../../contexts/DataContext';
 import ChartCard from './ChartCard';
 
-const ChartGrid: React.FC = () => {
+interface ChartGridProps {
+  onChartImageReady?: (questionId: string, dataUrl: string) => void;
+}
+
+const ChartGrid: React.FC<ChartGridProps> = ({ onChartImageReady }) => {
   const { data, filteredData, selectedQuestions } = useData();
   
   // Filter only selected questions
@@ -38,6 +42,7 @@ const ChartGrid: React.FC = () => {
                   key={question.id}
                   question={question}
                   data={filteredData}
+                  onChartImageReady={onChartImageReady} // <-- Pass it here!
                 />
               ))}
             </div>
