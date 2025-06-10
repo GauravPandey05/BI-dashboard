@@ -28,27 +28,32 @@ const ChartGrid: React.FC<ChartGridProps> = ({ onChartImageReady }) => {
   };
   
   return (
-    <div className="space-y-8">
-      {Object.entries(groupedQuestions).map(([category, questions]) => 
-        questions.length > 0 && (
+    <div className="space-y-6 sm:space-y-8">
+      {Object.entries(groupedQuestions).map(([category, questions]) => {
+        // Return null if no questions in this category
+        if (questions.length === 0) return null;
+        
+        return (
           <div key={category} className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-800 py-2 border-b border-gray-200">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-800 py-2 border-b border-gray-200">
               {category}
             </h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Responsive grid that stacks on mobile and shows 2 columns on medium screens */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
               {questions.map(question => (
-                <ChartCard 
-                  key={question.id}
-                  question={question}
-                  data={filteredData}
-                  onChartImageReady={onChartImageReady} // <-- Pass it here!
-                />
+                <div key={question.id} className="w-full">
+                  <ChartCard 
+                    question={question}
+                    data={filteredData}
+                    onChartImageReady={onChartImageReady}
+                  />
+                </div>
               ))}
             </div>
           </div>
-        )
-      )}
+        );
+      })}
     </div>
   );
 };

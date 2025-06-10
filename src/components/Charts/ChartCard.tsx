@@ -1,7 +1,27 @@
 import React, { useState, useMemo, useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
-import Highcharts from 'highcharts';
-import HighchartsReact from 'highcharts-react-official';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+import { Bar, Pie } from 'react-chartjs-2';
 import { Download, BarChart, PieChart, Info } from 'lucide-react';
+import ResponsiveChart from './ResponsiveChart';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
 
 interface ChartCardProps {
   question: any;
@@ -27,28 +47,41 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
 }, ref) => {
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
   const [showInfo, setShowInfo] = useState(false);
-  const chartComponentRef = useRef<any>(null);
-  const exportingModuleLoaded = useRef(false);
+  const chartRef = useRef<any>(null);
 
   useImperativeHandle(ref, () => ({
     toBase64Image: () => {
-      if (chartComponentRef.current) {
-        return chartComponentRef.current.chart.getSVG();
+      if (chartRef.current) {
+        try {
+          // Get canvas and convert to base64
+          const canvas = chartRef.current.canvas;
+          return canvas.toDataURL('image/png');
+        } catch (error) {
+          console.warn('Chart export failed:', error);
+          return null;
+        }
       }
       return null;
     }
   }));
 
-  // Compute statistics from the data - with better memoization
+  // Compute statistics from the data with better formatting
   const stats = useMemo(() => {
-    if (!question.choices) return { counts: {}, total: 0, labels: [], dataset: [], isMultiSelect: false };
+    if (!question?.choices) return { 
+      counts: {}, 
+      total: 0, 
+      labels: [], 
+      dataset: [], 
+      isMultiSelect: false,
+      detailedStats: []
+    };
 
     const counts: Record<string, number> = {};
     let total = 0;
     const responseCounted = new Set();
     const isMultiSelect = question.type === 'multiple_choice';
 
-    // Pre-initialize counts object to avoid repeated property creation
+    // Pre-initialize counts object
     if (question.choices) {
       question.choices.forEach((choice: any) => {
         counts[choice.id] = 0;
@@ -58,11 +91,11 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
     // Process responses
     data.responses.forEach((response: any) => {
       const answer = response.answers[question.id];
-      const weight = response.weight || 1;
+      const weight = Math.round(response.weight || 1); // Round weights to whole numbers
 
       if (Array.isArray(answer)) {
         answer.forEach((choice: any) => {
-          counts[choice] = (counts[choice] || 0) + weight;
+          counts[choice] = Math.round((counts[choice] || 0) + weight);
         });
         if (!responseCounted.has(response.id)) {
           total += weight;
@@ -71,14 +104,14 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
       } else if (typeof answer === 'object' && answer !== null) {
         Object.entries(answer).forEach(([key, value]) => {
           if (!counts[key]) counts[key] = 0;
-          counts[key] += Number(value) * weight;
+          counts[key] = Math.round(counts[key] + (Number(value) * weight));
         });
         if (!responseCounted.has(response.id)) {
           total += weight;
           responseCounted.add(response.id);
         }
       } else if (answer) {
-        counts[answer] = (counts[answer] || 0) + weight;
+        counts[answer] = Math.round((counts[answer] || 0) + weight);
         if (!responseCounted.has(response.id)) {
           total += weight;
           responseCounted.add(response.id);
@@ -86,269 +119,311 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
       }
     });
 
+    total = Math.round(total); // Ensure total is whole number
+
     // Generate labels and dataset arrays
     const labels: string[] = [];
     const dataset: number[] = [];
+    const detailedStats: Array<{label: string, count: number, percentage: number}> = [];
     
     if (question.choices) {
       question.choices.forEach((choice: any) => {
-        if (counts[choice.id] > 0) {
+        const count = Math.round(counts[choice.id] || 0);
+        if (count > 0) {
+          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
           labels.push(choice.text);
-          dataset.push(counts[choice.id]);
+          dataset.push(count);
+          detailedStats.push({
+            label: choice.text,
+            count: count,
+            percentage: percentage
+          });
         }
       });
     } else {
       Object.entries(counts).forEach(([key, value]) => {
+        const count = Math.round(value as number);
+        const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
         labels.push(key);
-        dataset.push(value as number);
+        dataset.push(count);
+        detailedStats.push({
+          label: key,
+          count: count,
+          percentage: percentage
+        });
       });
     }
 
-    return { counts, total, labels, dataset, isMultiSelect };
-  }, [question, data.responses]); // Depend directly on data.responses
+    // Sort detailed stats by count (descending)
+    detailedStats.sort((a, b) => b.count - a.count);
 
-  // Prepare Highcharts options
-  const highchartsOptions = useMemo(() => {
-    if (chartType === 'pie') {
-      return {
-        chart: {
-          type: 'pie',
-          height: exportMode ? height : 320,
-          backgroundColor: '#fff',
-          animation: false // Disable animations for better performance
+    return { counts, total, labels, dataset, isMultiSelect, detailedStats };
+  }, [question, data.responses]);
+
+  // Chart.js data configuration with rounded values
+  const chartData = useMemo(() => {
+    return {
+      labels: stats.labels,
+      datasets: [
+        {
+          label: 'Responses',
+          data: stats.dataset.map(val => Math.round(val)), // Ensure all values are whole numbers
+          backgroundColor: CHART_COLORS.slice(0, stats.labels.length),
+          borderColor: CHART_COLORS.slice(0, stats.labels.length).map(color => color + '80'),
+          borderWidth: 1,
         },
-        title: { text: null },
-        tooltip: {
-          pointFormat: '<b>{point.percentage:.0f}%</b> ({point.y})'
-        },
-        plotOptions: {
-          pie: {
-            allowPointSelect: true,
-            cursor: 'pointer',
-            dataLabels: {
-              enabled: true,
-              format: '{point.name}: {point.percentage:.0f}%'
-            },
-            colors: CHART_COLORS
-          },
-          series: {
-            animation: false, // Disable animations for better performance
-            turboThreshold: 0 // Disable series optimizations for better reliability
-          }
-        },
-        legend: { enabled: true, align: 'right', verticalAlign: 'middle', layout: 'vertical' },
-        series: [{
-          name: 'Responses',
-          colorByPoint: true,
-          data: stats.labels.map((label, i) => ({
-            name: label,
-            y: stats.dataset[i]
-          }))
-        }]
-      };
-    } else {
-      return {
-        chart: {
-          type: 'bar',
-          height: exportMode ? height : 320,
-          backgroundColor: '#fff',
-          animation: false // Disable animations for better performance
-        },
-        title: { text: null },
-        xAxis: {
-          categories: stats.labels,
-          title: { text: null }
-        },
-        yAxis: {
-          min: 0,
-          title: { text: 'Responses', align: 'high' },
+      ],
+    };
+  }, [stats.labels, stats.dataset]);
+
+  // Chart.js options with no decimal tooltips
+  const chartOptions = useMemo(() => {
+    const baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: chartType === 'pie' ? 'bottom' as const : 'top' as const,
+          display: true,
           labels: {
-            overflow: 'justify',
-            formatter: function (this: any) {
-              const total = stats.total;
-              if (!total) return '0%';
-              return Math.round((Number(this.value) / total) * 100) + '%';
+            padding: 10,
+            usePointStyle: true,
+            font: {
+              size: 12
+            },
+            generateLabels: function(chart: any) {
+              const data = chart.data;
+              if (data.labels.length && data.datasets.length) {
+                return data.labels.map((label: string, i: number) => {
+                  const dataset = data.datasets[0];
+                  const value = Math.round(dataset.data[i]);
+                  const percentage = stats.total ? Math.round((value / stats.total) * 100) : 0;
+                  return {
+                    text: `${label} (${percentage}%)`,
+                    fillStyle: dataset.backgroundColor[i],
+                    strokeStyle: dataset.borderColor[i],
+                    lineWidth: 1,
+                    hidden: false,
+                    index: i
+                  };
+                });
+              }
+              return [];
             }
           }
         },
         tooltip: {
-          formatter: function (this: any) {
-            const value = this.y as number;
-            const total = stats.total;
-            const percentage = total ? Math.round((value / total) * 100) : 0;
-            return `<b>${this.x}</b>: ${percentage}% (${value})`;
-          }
-        },
-        plotOptions: {
-          bar: {
-            dataLabels: {
-              enabled: true,
-              formatter: function (this: any) {
-                if (!stats.total) return '0%';
-                return Math.round((this.y as number / stats.total) * 100) + '%';
-              }
+          callbacks: {
+            label: function(context: any) {
+              const value = Math.round(context.parsed.y || context.parsed);
+              const percentage = stats.total ? Math.round((value / stats.total) * 100) : 0;
+              return `${context.label}: ${value} responses (${percentage}%)`;
             },
-            colors: CHART_COLORS
-          },
-          series: {
-            animation: false, // Disable animations for better performance
-            turboThreshold: 0 // Disable series optimizations for better reliability
+            afterLabel: function(context: any) {
+              const value = Math.round(context.parsed.y || context.parsed);
+              if (stats.total > 0) {
+                const ratio = `${value}/${stats.total}`;
+                return `Ratio: ${ratio}`;
+              }
+              return '';
+            }
           }
-        },
-        legend: { enabled: false },
-        series: [{
-          name: 'Responses',
-          data: stats.dataset,
-          colorByPoint: true
-        }]
+        }
+      },
+      animation: {
+        duration: exportMode ? 0 : 1000,
+      },
+      layout: {
+        padding: {
+          top: 10,
+          bottom: chartType === 'pie' ? 20 : 10,
+          left: 10,
+          right: 10
+        }
+      }
+    };
+
+    if (chartType === 'bar') {
+      return {
+        ...baseOptions,
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1, // Force whole number steps
+              callback: function(value: any) {
+                return Math.round(Number(value)); // Display whole numbers only
+              }
+            }
+          },
+          x: {
+            ticks: {
+              maxRotation: 45,
+              minRotation: 0
+            }
+          }
+        }
       };
     }
-  }, [chartType, stats.labels, stats.dataset, stats.total, exportMode, height]);
 
-  // Lazy load exporting module only when needed
-  const loadExportingModule = useCallback(async () => {
-    if (exportingModuleLoaded.current) return;
-    
-    try {
-      const module: any = await import('highcharts/modules/exporting');
-      if (typeof module === 'function') {
-        module(Highcharts);
-      } else if (module.default && typeof module.default === 'function') {
-        module.default(Highcharts);
-      }
-      exportingModuleLoaded.current = true;
-    } catch (e) {
-      console.error('Failed to load Highcharts exporting module', e);
-    }
-  }, []);
+    return baseOptions;
+  }, [chartType, stats.total, exportMode]);
 
-  // Export chart image as PNG
+  // Export chart image
   const handleExportChart = useCallback(() => {
-    if (chartComponentRef.current) {
-      loadExportingModule().then(() => {
-        chartComponentRef.current.chart.exportChart({ type: 'image/png' });
-      });
+    if (chartRef.current) {
+      try {
+        const canvas = chartRef.current.canvas;
+        const url = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `chart-${question.id}.png`;
+        link.href = url;
+        link.click();
+      } catch (error) {
+        console.warn('Export failed:', error);
+      }
     }
-  }, [loadExportingModule]);
+  }, [question.id]);
 
-  // Call onChartImageReady with SVG data
+  // Call onChartImageReady when chart is ready
   useEffect(() => {
-    if (chartComponentRef.current && onChartImageReady && stats.total > 0) {
+    if (chartRef.current && onChartImageReady && stats.total > 0) {
       const timer = setTimeout(() => {
-        if (chartComponentRef.current) {
-          const svg = chartComponentRef.current.chart.getSVG();
-          onChartImageReady(question.id, svg);
+        if (chartRef.current) {
+          try {
+            const canvas = chartRef.current.canvas;
+            const dataUrl = canvas.toDataURL('image/png');
+            onChartImageReady(question.id, dataUrl);
+          } catch (error) {
+            console.warn('Failed to generate chart image:', error);
+          }
         }
-      }, 300);
+      }, 500);
+      
       return () => clearTimeout(timer);
     }
-  }, [chartType, onChartImageReady, question.id, stats.total]);
+  }, [chartType, onChartImageReady, question?.id, stats.total]);
 
-  // Memoize the chart component to prevent unnecessary re-renders
-  const chartComponent = useMemo(() => {
-    if (stats.total <= 0) {
-      return (
-        <div className="h-80 flex items-center justify-center text-gray-400">
-          No data available for this question
-        </div>
-      );
-    }
-
+  if (!question || stats.total === 0) {
     return (
-      <div
-        style={exportMode ? { width, height, background: "#fff" } : {}}
-        className={exportMode ? "" : "h-80 flex items-center justify-center"}
-      >
-        <HighchartsReact
-          highcharts={Highcharts}
-          options={highchartsOptions}
-          ref={chartComponentRef}
-          immutable={true}
-          updateArgs={[true, true, true]} // Force proper updates
-        />
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="text-center text-gray-500">
+          <Info className="h-8 w-8 mx-auto mb-2" />
+          <p>No data available for this question</p>
+        </div>
       </div>
     );
-  }, [stats.total, exportMode, highchartsOptions, width, height]);
+  }
 
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-md">
-      <div className="p-4 border-b border-gray-100">
-        <div className="flex justify-between items-start">
-          <h3 className="text-sm font-medium text-gray-700">{question.id}: {question.text}</h3>
-          <div className="flex space-x-1">
-            <button 
-              onClick={() => setChartType('pie')}
-              className={`p-1 rounded ${chartType === 'pie' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Show as pie chart"
-            >
-              <PieChart size={16} />
-            </button>
-            <button 
-              onClick={() => setChartType('bar')}
-              className={`p-1 rounded ${chartType === 'bar' ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Show as bar chart"
-            >
-              <BarChart size={16} />
-            </button>
-            <button 
-              onClick={() => setShowInfo(!showInfo)}
-              className={`p-1 rounded ${showInfo ? 'bg-blue-100 text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-              title="Show information"
-            >
-              <Info size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="mt-2 flex items-center text-xs text-gray-500">
-          <span>Showing data from {data.responses.length} responses</span>
-          <span className="mx-2">•</span>
-          <span>{stats.total > 0 ? `${stats.labels.length} options` : 'No data'}</span>
-        </div>
-      </div>
-      <div className="p-4">
-        {chartComponent}
-
-        {showInfo && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-md text-xs text-gray-600">
-            <h4 className="font-medium mb-1">Summary</h4>
-            <p>Total responses: {data.responses.length}</p>
-            {stats.isMultiSelect && (
-              <p className="mt-1 text-amber-600 italic">
-                Note: Percentages may sum to over 100% as respondents can select multiple options.
-              </p>
-            )}
-            <div className="mt-2 space-y-1">
-              {stats.labels.map((label, index) => {
-                const percentage = Math.round((stats.dataset[index] / stats.total) * 100);
-                const count = Math.round(stats.dataset[index]);
-                return (
-                  <div key={index} className="flex justify-between">
-                    <span>{label}:</span>
-                    <span className="font-medium">{percentage}% ({count})</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+  if (exportMode) {
+    return (
+      <div style={{ width, height }}>
+        {chartType === 'pie' ? (
+          <Pie ref={chartRef} data={chartData} options={chartOptions} />
+        ) : (
+          <Bar ref={chartRef} data={chartData} options={chartOptions} />
         )}
       </div>
-      <div className="bg-gray-50 px-4 py-2 border-t border-gray-100">
-        <div className="flex justify-between items-center">
-          <div className="text-xs text-gray-500">
-            <span className="font-medium">Filtered:</span> {data.responses.length}
-          </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-3 sm:p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3 sm:gap-0">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-800 break-words">{question.id}</h3>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1 break-words">{question.text}</p>
+        </div>
+        <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+          <button
+            onClick={() => setChartType(chartType === 'pie' ? 'bar' : 'pie')}
+            className="p-1.5 sm:p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+            title={`Switch to ${chartType === 'pie' ? 'bar' : 'pie'} chart`}
+          >
+            {chartType === 'pie' ? <BarChart size={16} /> : <PieChart size={16} />}
+          </button>
           <button
             onClick={handleExportChart}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
-            title="Export chart as image"
+            className="p-1.5 sm:p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+            title="Export chart"
           >
-            <Download size={14} />
-            Export Image
+            <Download size={16} />
+          </button>
+          <button
+            onClick={() => setShowInfo(!showInfo)}
+            className="p-1.5 sm:p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+            title="Show detailed statistics"
+          >
+            <Info size={16} />
           </button>
         </div>
+      </div>
+
+      {/* Enhanced Info Panel */}
+      {showInfo && (
+        <div className="mb-4 p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Summary Statistics */}
+            <div>
+              <h4 className="text-sm font-semibold text-blue-900 mb-2">Summary</h4>
+              <div className="space-y-1 text-xs sm:text-sm text-blue-800">
+                <div><strong>Total Responses:</strong> {stats.total}</div>
+                <div><strong>Question Type:</strong> {question.type?.replace('_', ' ') || 'Unknown'}</div>
+                <div><strong>Multi-select:</strong> {stats.isMultiSelect ? 'Yes' : 'No'}</div>
+                <div><strong>Answer Options:</strong> {stats.labels.length}</div>
+                <div><strong>Response Rate:</strong> {stats.total > 0 ? '100%' : '0%'}</div>
+              </div>
+            </div>
+
+            {/* Detailed Breakdown */}
+            <div>
+              <h4 className="text-sm font-semibold text-blue-900 mb-2">Response Breakdown</h4>
+              <div className="space-y-1 text-xs sm:text-sm text-blue-800 max-h-32 overflow-y-auto">
+                {stats.detailedStats.map((stat, index) => (
+                  <div key={index} className="flex justify-between items-center">
+                    <span className="truncate mr-2" title={stat.label}>
+                      {stat.label.length > 20 ? `${stat.label.substring(0, 20)}...` : stat.label}
+                    </span>
+                    <span className="font-medium flex-shrink-0">
+                      {stat.count} ({stat.percentage}%)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Most/Least Popular */}
+          {stats.detailedStats.length > 1 && (
+            <div className="mt-3 pt-3 border-t border-blue-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm text-blue-800">
+                <div>
+                  <strong>Most Popular:</strong> {stats.detailedStats[0]?.label} 
+                  <span className="text-blue-600"> ({stats.detailedStats[0]?.percentage}%)</span>
+                </div>
+                <div>
+                  <strong>Least Popular:</strong> {stats.detailedStats[stats.detailedStats.length - 1]?.label}
+                  <span className="text-blue-600"> ({stats.detailedStats[stats.detailedStats.length - 1]?.percentage}%)</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Chart Container */}
+      <div className={`${chartType === 'pie' ? 'h-80 sm:h-96' : 'h-64 sm:h-80'} w-full chart-container`}>
+        <ResponsiveChart
+          chartType={chartType}
+          data={chartData}
+          options={chartOptions}
+          chartRef={chartRef}
+        />
       </div>
     </div>
   );
 });
 
-export default React.memo(ChartCard);
+ChartCard.displayName = 'ChartCard';
+
+export default ChartCard;
