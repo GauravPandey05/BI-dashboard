@@ -5,13 +5,18 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const SYSTEM_PROMPT = `
-You are a travel data assistant. 
-Answer using only the provided survey data. 
-Respond concisely with only the requested data (percentages, counts, etc.).
-Do not mention question numbers or codes (like Q3_1) in your response—use only the plain text labels.
+You are a travel data assistant.
+Answer using ONLY the provided survey data.
+Your answers MUST match exactly with the data shown in the charts.
+Present counts and percentages precisely as they appear in the data.
+
+IMPORTANT: For multi-select questions (marked as "multi-select question"), percentages may sum to over 100% because respondents can select multiple options. This is expected and correct.
+
+Do not mention question IDs (like Q3_1) in your response—use only the question text and answer options.
 If you provide a demographic split, format it as a markdown table (with a blank line before and after the table).
-After the data, add a brief insight or highlight (e.g., which group is highest, or a notable trend) if possible.
-Only add explanations if the user asks for them. If the user asks a follow-up, use the previous context.
+Always present percentages as whole numbers (e.g., 24% not 24.3%).
+After presenting data, add a brief insight highlighting the most significant finding.
+Only add explanations if the user asks for them. For follow-up questions, use the previous context.
 `;
 
 interface Message {
@@ -53,19 +58,102 @@ const Chatbot: React.FC<ChatbotProps> = ({ onClose }) => {
   // Generate a concise summary of the current survey data for the system prompt
   const getSurveyContext = (demographic?: string) => {
     const { questions, responses } = filteredData;
-    // Only send question texts and choices, not codes
-    const questionSummaries = questions.map(q => {
-      const choices = q.choices ? q.choices.map(c => c.text).join('; ') : '';
-      return `${q.text}${choices ? ` [${choices}]` : ''}`;
+    
+    // If you want to show filter info, ensure you get it from the correct context or remove this block
+    const filterInfo = ''; // No activeFilters in SurveyData
+    
+    // Get response counts for each question and choice
+    const responseCounts = questions.map(q => {
+      const qId = q.id;
+      const counts: Record<string, number> = {};
+      const responseCounted = new Set();
+      let total = 0;
+      
+      // Count responses for each choice
+      responses.forEach(r => {
+        const answer = r.answers[qId];
+        const weight = r.weight || 1;
+        
+        if (answer) {
+          if (Array.isArray(answer)) {
+            answer.forEach(a => {
+              const choice = q.choices?.find(c => c.id === a);
+              if (choice) {
+                counts[choice.text] = (counts[choice.text] || 0) + weight;
+              }
+            });
+            
+            // Only count response once for total
+            if (!responseCounted.has(r.id)) {
+              total += weight;
+              responseCounted.add(r.id);
+            }
+          } else if (typeof answer === 'object' && answer !== null) {
+            // Handle scale questions
+            Object.entries(answer).forEach(([key, value]) => {
+              const choice = q.choices?.find(c => c.id === key);
+              if (choice) {
+                counts[choice.text] = (counts[choice.text] || 0) + Number(value) * weight;
+              }
+            });
+            
+            if (!responseCounted.has(r.id)) {
+              total += weight;
+              responseCounted.add(r.id);
+            }
+          } else {
+            const choice = q.choices?.find(c => c.id === answer);
+            if (choice) {
+              counts[choice.text] = (counts[choice.text] || 0) + weight;
+            }
+            
+            if (!responseCounted.has(r.id)) {
+              total += weight;
+              responseCounted.add(r.id);
+            }
+          }
+        }
+      });
+      
+      // Calculate percentages
+      const countsWithPercentages = Object.entries(counts).reduce((acc, [choice, count]) => {
+        acc[choice] = {
+          count: Math.round(count),
+          percentage: Math.round((count / total) * 100)
+        };
+        return acc;
+      }, {} as Record<string, {count: number, percentage: number}>);
+      
+      // Note if this is a multi-select question
+      const isMultiSelect = q.type === 'multiple_choice';
+      let questionInfo = `${q.text}: ${JSON.stringify(countsWithPercentages)}`;
+      if (isMultiSelect) {
+        questionInfo += " (multi-select question - percentages may sum to >100%)";
+      }
+      
+      return questionInfo;
     }).join('\n');
+    
+    // Demographic data summary
     const demoFields = responses[0]?.demographics
       ? Object.keys(responses[0].demographics).join(', ')
       : '';
+      
     let extra = '';
     if (demographic) {
-      extra = `\nIf the user asks for a breakdown by ${demographic}, use the "${demographic}" field from the demographics.`;
+      // Prepare demographic breakdown
+      const demoBreakdown: Record<string, number> = {};
+      responses.forEach(r => {
+        const value = r.demographics?.[demographic as keyof typeof r.demographics];
+        if (value) {
+          demoBreakdown[value as string] = (demoBreakdown[value as string] || 0) + 1;
+        }
+      });
+      
+      extra = `\nIf the user asks for a breakdown by ${demographic}, use this data: ${JSON.stringify(demoBreakdown)}`;
     }
-    return `Survey Questions:\n${questionSummaries}\nDemographic fields: ${demoFields}\nTotal responses: ${responses.length}${extra}`;
+    
+    return `${filterInfo}Survey Questions with Response Counts:\n${responseCounts}\n\nDemographic fields: ${demoFields}\nTotal responses: ${responses.length}${extra}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,12 +169,17 @@ const Chatbot: React.FC<ChatbotProps> = ({ onClose }) => {
         role: 'system',
         content:
           `You are a travel data assistant. 
-          Answer using only the provided survey data. 
-          Respond concisely with only the requested data (percentages, counts, etc.).
-          Do not mention question numbers or codes (like Q3_1) in your response—use only the plain text labels.
+          Answer using ONLY the provided survey data.
+          Your answers MUST match exactly with the data shown in the charts.
+          Present counts and percentages precisely as they appear in the data.
+          
+          IMPORTANT: For multi-select questions (marked as "multi-select question"), percentages may sum to over 100% because respondents can select multiple options. This is expected and correct.
+          
+          Do not mention question IDs (like Q3_1) in your response—use only the question text and answer options.
           If you provide a demographic split, format it as a markdown table (with a blank line before and after the table).
-          After the data, add a brief insight or highlight (e.g., which group is highest, or a notable trend) if possible.
-          Only add explanations if the user asks for them. If the user asks a follow-up, use the previous context.\n\n${getSurveyContext(demographic)}`
+          Always present percentages as whole numbers (e.g., 24% not 24.3%).
+          After presenting data, add a brief insight highlighting the most significant finding.
+          Only add explanations if the user asks for them. For follow-up questions, use the previous context.\n\n${getSurveyContext(demographic)}`
       },
       ...messages.filter(m => m.role !== 'system'),
       { role: 'user', content: message }
