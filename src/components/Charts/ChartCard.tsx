@@ -1,27 +1,31 @@
-import React, { useState, useMemo, useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement,
-} from 'chart.js';
-import { Bar, Pie } from 'react-chartjs-2';
+import React, { useState, useMemo, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
+import Highcharts from 'highcharts';
+import HighchartsExporting from 'highcharts/modules/exporting';
+import HighchartsExportData from 'highcharts/modules/export-data';
+import HighchartsOfflineExporting from 'highcharts/modules/offline-exporting';
+import HighchartsReact from 'highcharts-react-official';
 import { Download, BarChart, PieChart, Info } from 'lucide-react';
-import ResponsiveChart from './ResponsiveChart';
+import { svgToPng } from '../../utils/svgToPng';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement
-);
+// Compatibility for both CJS and ESM
+const exportingModule = HighchartsExporting as any;
+if (typeof exportingModule === 'function') {
+  exportingModule(Highcharts);
+} else if (exportingModule && typeof exportingModule.default === 'function') {
+  exportingModule.default(Highcharts);
+}
+const exportDataModule = HighchartsExportData as any;
+if (typeof exportDataModule === 'function') {
+  exportDataModule(Highcharts);
+} else if (exportDataModule && typeof exportDataModule.default === 'function') {
+  exportDataModule.default(Highcharts);
+}
+const offlineExportingModule = HighchartsOfflineExporting as any;
+if (typeof offlineExportingModule === 'function') {
+  offlineExportingModule(Highcharts);
+} else if (offlineExportingModule && typeof offlineExportingModule.default === 'function') {
+  offlineExportingModule.default(Highcharts);
+}
 
 interface ChartCardProps {
   question: any;
@@ -47,25 +51,55 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
 }, ref) => {
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
   const [showInfo, setShowInfo] = useState(false);
-  const chartRef = useRef<any>(null);
+  const chartComponentRef = useRef<any>(null);
 
+  // Download button (manual user download, keep as is)
+  const handleExportChart = useCallback(() => {
+    if (chartComponentRef.current) {
+      try {
+        const chart = chartComponentRef.current.chart;
+        if (typeof chart.exportChartLocal === 'function') {
+          chart.exportChartLocal({
+            type: 'image/png',
+            filename: `chart-${question.id}`,
+            fallbackToExportServer: false,
+          });
+          console.log('Highcharts local export triggered for', question.id);
+        } else {
+          chart.exportChart({
+            type: 'image/png',
+            filename: `chart-${question.id}`,
+          });
+          console.log('Highcharts server export triggered for', question.id);
+        }
+      } catch (error) {
+        console.error('Highcharts export failed:', error);
+      }
+    } else {
+      console.warn('Highcharts ref not available for export');
+    }
+  }, [question.id]);
+
+  // For PPT export: always use SVG->PNG conversion, never triggers download
   useImperativeHandle(ref, () => ({
-    toBase64Image: () => {
-      if (chartRef.current) {
-        try {
-          // Get canvas and convert to base64
-          const canvas = chartRef.current.canvas;
-          return canvas.toDataURL('image/png');
-        } catch (error) {
-          console.warn('Chart export failed:', error);
-          return null;
+    exportChart: handleExportChart,
+    getChartImage: async (callback: (dataUrl: string) => void) => {
+      if (chartComponentRef.current) {
+        const chart = chartComponentRef.current.chart;
+        if (typeof chart.getSVGForExport === 'function') {
+          const svg = chart.getSVGForExport();
+          try {
+            const pngDataUrl = await svgToPng(svg, width, height);
+            callback(pngDataUrl);
+          } catch (err) {
+            console.error('SVG to PNG conversion failed', err);
+            callback('');
+          }
         }
       }
-      return null;
     }
   }));
 
-  // Compute statistics from the data with better formatting
   const stats = useMemo(() => {
     if (!question?.choices) return { 
       counts: {}, 
@@ -81,17 +115,15 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
     const responseCounted = new Set();
     const isMultiSelect = question.type === 'multiple_choice';
 
-    // Pre-initialize counts object
     if (question.choices) {
       question.choices.forEach((choice: any) => {
         counts[choice.id] = 0;
       });
     }
 
-    // Process responses
     data.responses.forEach((response: any) => {
       const answer = response.answers[question.id];
-      const weight = Math.round(response.weight || 1); // Round weights to whole numbers
+      const weight = Math.round(response.weight || 1);
 
       if (Array.isArray(answer)) {
         answer.forEach((choice: any) => {
@@ -119,9 +151,8 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
       }
     });
 
-    total = Math.round(total); // Ensure total is whole number
+    total = Math.round(total);
 
-    // Generate labels and dataset arrays
     const labels: string[] = [];
     const dataset: number[] = [];
     const detailedStats: Array<{label: string, count: number, percentage: number}> = [];
@@ -154,155 +185,224 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
       });
     }
 
-    // Sort detailed stats by count (descending)
     detailedStats.sort((a, b) => b.count - a.count);
 
     return { counts, total, labels, dataset, isMultiSelect, detailedStats };
   }, [question, data.responses]);
 
-  // Chart.js data configuration with rounded values
-  const chartData = useMemo(() => {
-    return {
-      labels: stats.labels,
-      datasets: [
-        {
-          label: 'Responses',
-          data: stats.dataset.map(val => Math.round(val)), // Ensure all values are whole numbers
-          backgroundColor: CHART_COLORS.slice(0, stats.labels.length),
-          borderColor: CHART_COLORS.slice(0, stats.labels.length).map(color => color + '80'),
-          borderWidth: 1,
-        },
-      ],
-    };
-  }, [stats.labels, stats.dataset]);
+  const highchartsOptions = useMemo(() => {
+    const tooManyCategories = stats.labels.length > 8;
 
-  // Chart.js options with no decimal tooltips
-  const chartOptions = useMemo(() => {
-    const baseOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: chartType === 'pie' ? 'bottom' as const : 'top' as const,
-          display: true,
-          labels: {
-            padding: 10,
-            usePointStyle: true,
-            font: {
-              size: 12
-            },
-            generateLabels: function(chart: any) {
-              const data = chart.data;
-              if (data.labels.length && data.datasets.length) {
-                return data.labels.map((label: string, i: number) => {
-                  const dataset = data.datasets[0];
-                  const value = Math.round(dataset.data[i]);
-                  const percentage = stats.total ? Math.round((value / stats.total) * 100) : 0;
-                  return {
-                    text: `${label} (${percentage}%)`,
-                    fillStyle: dataset.backgroundColor[i],
-                    strokeStyle: dataset.borderColor[i],
-                    lineWidth: 1,
-                    hidden: false,
-                    index: i
-                  };
-                });
-              }
-              return [];
-            }
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context: any) {
-              const value = Math.round(context.parsed.y || context.parsed);
-              const percentage = stats.total ? Math.round((value / stats.total) * 100) : 0;
-              return `${context.label}: ${value} responses (${percentage}%)`;
-            },
-            afterLabel: function(context: any) {
-              const value = Math.round(context.parsed.y || context.parsed);
-              if (stats.total > 0) {
-                const ratio = `${value}/${stats.total}`;
-                return `Ratio: ${ratio}`;
-              }
-              return '';
-            }
-          }
-        }
-      },
-      animation: {
-        duration: exportMode ? 0 : 1000,
-      },
-      layout: {
-        padding: {
-          top: 10,
-          bottom: chartType === 'pie' ? 20 : 10,
-          left: 10,
-          right: 10
-        }
-      }
-    };
+    // Helper for truncating labels
+    const truncate = (str: string, n: number) =>
+      str.length > n ? str.slice(0, n - 1) + '…' : str;
 
-    if (chartType === 'bar') {
-      return {
-        ...baseOptions,
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: {
-              stepSize: 1, // Force whole number steps
-              callback: function(value: any) {
-                return Math.round(Number(value)); // Display whole numbers only
+    // Use a very high maxLen in exportMode to avoid truncation
+    const getMaxLen = (mobileLen: number, desktopLen: number) =>
+      exportMode ? 1000 : (window.innerWidth < 640 ? mobileLen : desktopLen);
+
+    return chartType === 'pie'
+      ? {
+          chart: {
+            type: 'pie',
+            height: exportMode ? height : undefined,
+            backgroundColor: 'transparent',
+          },
+          title: { text: undefined },
+          tooltip: {
+            pointFormat: '<b>{point.y} responses</b> ({point.percentage:.0f}%)'
+          },
+          plotOptions: {
+            pie: {
+              allowPointSelect: true,
+              cursor: 'pointer',
+              colors: CHART_COLORS,
+              dataLabels: {
+                enabled: !tooManyCategories,
+                formatter: function (this: any): string {
+                  const name = this.point.name || '';
+                  const y = this.point.y;
+                  const pct = this.point.percentage ? Math.round(this.point.percentage) : 0;
+                  const maxLen = getMaxLen(14, 20);
+                  return `${truncate(name, maxLen)}: ${y} (${pct}%)`;
+                },
+                distance: 20,
+                style: {
+                  fontWeight: 'bold',
+                  color: '#333',
+                  textOutline: 'none',
+                  fontSize: window.innerWidth < 640 ? '10px' : '13px'
+                }
               }
             }
           },
-          x: {
-            ticks: {
-              maxRotation: 45,
-              minRotation: 0
+          series: [{
+            name: 'Responses',
+            colorByPoint: true,
+            data: stats.labels.map((label, i) => ({
+              name: label,
+              y: stats.dataset[i]
+            }))
+          }],
+          credits: { enabled: false },
+          exporting: {
+            enabled: true,
+            allowHTML: true,
+            fallbackToExportServer: false,
+            sourceWidth: width,
+            sourceHeight: height,
+            chartOptions: {
+              chart: { backgroundColor: '#fff' }
             }
+          },
+          responsive: {
+            rules: [
+              {
+                condition: { maxWidth: 600 },
+                chartOptions: {
+                  chart: { height: 220 },
+                  plotOptions: {
+                    pie: {
+                      dataLabels: {
+                        style: { fontSize: '10px' },
+                        distance: 10,
+                        formatter: function (this: any): string {
+                          const name = this.point.name || '';
+                          const y = this.point.y;
+                          const pct = this.point.percentage ? Math.round(this.point.percentage) : 0;
+                          const maxLen = getMaxLen(14, 14);
+                          return `${truncate(name, maxLen)}: ${y} (${pct}%)`;
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                // Hide data labels if too many slices on small screens
+                condition: { maxWidth: 600, callback: () => stats.labels.length > 5 },
+                chartOptions: {
+                  plotOptions: {
+                    pie: {
+                      dataLabels: { enabled: false }
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
-      };
-    }
-
-    return baseOptions;
-  }, [chartType, stats.total, exportMode]);
-
-  // Export chart image
-  const handleExportChart = useCallback(() => {
-    if (chartRef.current) {
-      try {
-        const canvas = chartRef.current.canvas;
-        const url = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.download = `chart-${question.id}.png`;
-        link.href = url;
-        link.click();
-      } catch (error) {
-        console.warn('Export failed:', error);
-      }
-    }
-  }, [question.id]);
-
-  // Call onChartImageReady when chart is ready
-  useEffect(() => {
-    if (chartRef.current && onChartImageReady && stats.total > 0) {
-      const timer = setTimeout(() => {
-        if (chartRef.current) {
-          try {
-            const canvas = chartRef.current.canvas;
-            const dataUrl = canvas.toDataURL('image/png');
-            onChartImageReady(question.id, dataUrl);
-          } catch (error) {
-            console.warn('Failed to generate chart image:', error);
+      : {
+          chart: {
+            type: 'column',
+            height: exportMode ? height : undefined,
+            backgroundColor: 'transparent',
+          },
+          title: { text: undefined },
+          xAxis: {
+            categories: stats.labels,
+            labels: {
+              style: { fontSize: window.innerWidth < 640 ? '10px' : '12px' },
+              rotation: stats.labels.length > 5 ? -45 : 0,
+              step: stats.labels.length > 10 ? 2 : 1,
+              autoRotation: [-45],
+              useHTML: true,
+              formatter: function (this: any): string {
+                const label = this.value as string || '';
+                const maxLen = getMaxLen(10, 16);
+                return `<span title="${label}">${truncate(label, maxLen)}</span>`;
+              }
+            }
+          },
+          yAxis: {
+            min: 0,
+            allowDecimals: false,
+            title: { text: 'Responses' }
+          },
+          tooltip: {
+            formatter: function (this: any): string {
+              const label = this.x as string || '';
+              const y = this.y as number;
+              const pct = this.point && (this.point as any).percentage ? Math.round((this.point as any).percentage) : 0;
+              return `<b>${label}</b><br/>${y} responses (${pct}%)`;
+            }
+          },
+          plotOptions: {
+            column: {
+              colorByPoint: true,
+              colors: CHART_COLORS,
+              dataLabels: {
+                enabled: !tooManyCategories,
+                inside: false,
+                formatter: function (this: any): string {
+                  const y = this.y as number;
+                  const pct = this.point && (this.point as any).percentage ? Math.round((this.point as any).percentage) : 0;
+                  return `${y} (${pct}%)`;
+                },
+                style: {
+                  fontWeight: 'bold',
+                  color: '#333',
+                  textOutline: 'none',
+                  fontSize: window.innerWidth < 640 ? '10px' : '13px'
+                }
+              }
+            }
+          },
+          series: [{
+            name: 'Responses',
+            data: stats.dataset.map((y, i) => ({
+              y,
+              percentage: stats.total > 0 ? Math.round((y / stats.total) * 100) : 0
+            })),
+            showInLegend: false
+          }],
+          credits: { enabled: false },
+          exporting: {
+            enabled: true,
+            allowHTML: true,
+            fallbackToExportServer: false,
+            sourceWidth: width,
+            sourceHeight: height,
+            chartOptions: {
+              chart: { backgroundColor: '#fff' }
+            }
+          },
+          responsive: {
+            rules: [
+              {
+                condition: { maxWidth: 600 },
+                chartOptions: {
+                  chart: { height: 180 },
+                  xAxis: {
+                    labels: {
+                      rotation: -45,
+                      style: { fontSize: '10px' }
+                    }
+                  },
+                  plotOptions: {
+                    column: {
+                      dataLabels: {
+                        style: { fontSize: '10px' }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                // Hide data labels if too many bars on small screens
+                condition: { maxWidth: 600, callback: () => stats.labels.length > 5 },
+                chartOptions: {
+                  plotOptions: {
+                    column: {
+                      dataLabels: { enabled: false }
+                    }
+                  }
+                }
+              }
+            ]
           }
-        }
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [chartType, onChartImageReady, question?.id, stats.total]);
+        };
+  }, [chartType, stats, exportMode, width, height]);
 
   if (!question || stats.total === 0) {
     return (
@@ -311,18 +411,6 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
           <Info className="h-8 w-8 mx-auto mb-2" />
           <p>No data available for this question</p>
         </div>
-      </div>
-    );
-  }
-
-  if (exportMode) {
-    return (
-      <div style={{ width, height }}>
-        {chartType === 'pie' ? (
-          <Pie ref={chartRef} data={chartData} options={chartOptions} />
-        ) : (
-          <Bar ref={chartRef} data={chartData} options={chartOptions} />
-        )}
       </div>
     );
   }
@@ -374,7 +462,6 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
                 <div><strong>Response Rate:</strong> {stats.total > 0 ? '100%' : '0%'}</div>
               </div>
             </div>
-
             {/* Detailed Breakdown */}
             <div>
               <h4 className="text-sm font-semibold text-blue-900 mb-2">Response Breakdown</h4>
@@ -392,7 +479,6 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
               </div>
             </div>
           </div>
-
           {/* Most/Least Popular */}
           {stats.detailedStats.length > 1 && (
             <div className="mt-3 pt-3 border-t border-blue-200">
@@ -413,11 +499,11 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
 
       {/* Chart Container */}
       <div className={`${chartType === 'pie' ? 'h-80 sm:h-96' : 'h-64 sm:h-80'} w-full chart-container`}>
-        <ResponsiveChart
-          chartType={chartType}
-          data={chartData}
-          options={chartOptions}
-          chartRef={chartRef}
+        <HighchartsReact
+          highcharts={Highcharts}
+          options={highchartsOptions}
+          ref={chartComponentRef}
+          immutable={true}
         />
       </div>
     </div>

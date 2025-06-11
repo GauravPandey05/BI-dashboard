@@ -9,7 +9,7 @@ interface PowerPointExportProps {
 }
 
 const PowerPointExport: React.FC<PowerPointExportProps> = ({ chartImages }) => {
-  const { data, filteredData, selectedQuestions } = useData();
+  const { data, filteredData, selectedQuestions, selectedFilters } = useData();
   const [exporting, setExporting] = useState(false);
   const [brandingImage, setBrandingImage] = useState<File | null>(null);
   const [brandingColor, setBrandingColor] = useState('#2563eb');
@@ -24,23 +24,37 @@ const PowerPointExport: React.FC<PowerPointExportProps> = ({ chartImages }) => {
 
   // Generate chart image for a specific question
   const generateChartImage = async (questionId: string): Promise<string | null> => {
-    // First check if we have a pre-generated image
     if (chartImages[questionId]) {
       return chartImages[questionId];
     }
-
-    // Try to get from export chart refs
     const chartRef = exportChartRefs.current[questionId];
-    if (chartRef) {
-      try {
-        const imageData = chartRef.toBase64Image();
-        return imageData;
-      } catch (error) {
-        console.warn(`Failed to generate chart image for ${questionId}:`, error);
-      }
+    if (chartRef && typeof chartRef.getChartImage === 'function') {
+      return await new Promise<string | null>((resolve) => {
+        // Now getChartImage is async and calls resolve when done
+        chartRef.getChartImage((dataUrl: string) => {
+          resolve(dataUrl);
+        });
+      });
     }
-
     return null;
+  };
+
+  // Helper to format applied filters for display
+  const getAppliedFiltersText = () => {
+    const filterLabels: { [key: string]: string } = {
+      ageGroups: 'Age Group',
+      genders: 'Gender',
+      familyCompositions: 'Family Composition',
+      incomeRanges: 'Income Range',
+      regions: 'Region'
+    };
+    const lines: string[] = [];
+    Object.entries(selectedFilters).forEach(([key, arr]) => {
+      if (Array.isArray(arr) && arr.length > 0) {
+        lines.push(`${filterLabels[key] || key}: ${arr.join(', ')}`);
+      }
+    });
+    return lines.length > 0 ? lines.join('\n') : 'None';
   };
 
   const exportToPowerPoint = async () => {
@@ -58,7 +72,7 @@ const PowerPointExport: React.FC<PowerPointExportProps> = ({ chartImages }) => {
           { 
             rect: { 
               x: 0, 
-              y: 7.0, 
+              y: 5.125, // <-- was 7.0, now fits in 5.625" slide height
               w: 10, 
               h: 0.5, 
               fill: { color: brandingColor.replace('#', '') }
@@ -132,95 +146,96 @@ const PowerPointExport: React.FC<PowerPointExportProps> = ({ chartImages }) => {
         align: 'center'
       });
 
-      // Add summary statistics in a more organized layout
+      // Total Responses
       slide2.addText(`Total Responses: ${data.responses.length}`, {
-        x: 1.0, y: 2.0, w: 8.0, h: 0.5,
-        fontSize: 18, color: '333333', align: 'left'
-      });
-      
-      slide2.addText(`Filtered Responses: ${filteredData.responses.length}`, {
-        x: 1.0, y: 2.7, w: 8.0, h: 0.5,
-        fontSize: 18, color: '333333', align: 'left'
-      });
-      
-      slide2.addText(`Selected Questions: ${selectedQuestions.length}`, {
-        x: 1.0, y: 3.4, w: 8.0, h: 0.5,
+        x: 1.0, y: 1.6, w: 8.0, h: 0.5,
         fontSize: 18, color: '333333', align: 'left'
       });
 
-      // Generate chart images and slides for each selected question
-      for (const qid of selectedQuestions) {
+      // Filtered Responses
+      slide2.addText(`Filtered Responses: ${filteredData.responses.length}`, {
+        x: 1.0, y: 2.3, w: 8.0, h: 0.5,
+        fontSize: 18, color: '333333', align: 'left'
+      });
+
+      // Applied Filters label
+      slide2.addText('Applied Filters:', {
+        x: 1.0, y: 3.0, w: 8.0, h: 0.5,
+        fontSize: 16, color: '2563eb', bold: true, align: 'left'
+      });
+
+      // Applied Filters values (give more height for long filters)
+      slide2.addText(getAppliedFiltersText(), {
+        x: 1.0, y: 3.6, w: 8.0, h: 1.2,
+        fontSize: 14, color: '333333', align: 'left',
+        valign: 'top'
+      });
+
+      // Pre-generate all chart images
+      const chartImagesArr = await Promise.all(
+        selectedQuestions.map(async (qid) => ({
+          qid,
+          image: await generateChartImage(qid)
+        }))
+      );
+
+      // Now add slides for each question
+      for (const { qid, image } of chartImagesArr) {
         const question = data.questions.find(q => q.id === qid);
         if (!question) continue;
-        
+
         const slide = pptx.addSlide({ masterName: 'BRANDED_SLIDE' });
-        
-        // Question title - reduced height to give more space for chart
+
+        // Question title
         const questionTitle = `${question.id}: ${question.text}`;
         slide.addText(questionTitle, {
-          x: 0.5, 
-          y: 0.2, 
-          w: 9.0, 
-          h: 0.6,  // Reduced from 0.7
-          fontSize: 14, 
-          color: '333333', 
-          bold: true, 
+          x: 0.5,
+          y: 0.2,
+          w: 9.0,
+          h: 0.6,
+          fontSize: 14,
+          color: '333333',
+          bold: true,
           align: 'center',
           wrap: true
         });
 
-        // Generate chart image with much smaller sizing to prevent overlap
-        const chartImage = await generateChartImage(qid);
-        if (chartImage) {
+        // Centered and smaller chart image
+        if (image) {
           try {
-            // Significantly reduced chart size to prevent footer overlap
             slide.addImage({
-              data: chartImage,
-              x: 1.0,   // Increased margin from 0.75
-              y: 1.0,   // Moved up slightly from 1.2
-              w: 8.0,   // Reduced from 8.5
-              h: 4.5    // Significantly reduced from 5.3
+              data: image,
+              x: 2.0,
+              y: 1.2,
+              w: 6.0,
+              h: 3.5
             });
           } catch (imageError) {
             console.warn('Failed to add chart image to slide:', imageError);
-            // Add fallback text
             slide.addText('Chart could not be generated', {
-              x: 2, 
-              y: 3.5, 
-              w: 6, 
+              x: 2,
+              y: 3.5,
+              w: 6,
               h: 1,
-              fontSize: 16, 
-              color: '666666', 
+              fontSize: 16,
+              color: '666666',
               align: 'center',
               fill: { color: 'F5F5F5' }
             });
           }
         } else {
-          // No chart available
           slide.addText('Chart not available - please ensure all charts are loaded on the dashboard', {
-            x: 1.5, 
-            y: 3.0, 
-            w: 7, 
+            x: 1.5,
+            y: 3.0,
+            w: 7,
             h: 2.0,
-            fontSize: 14, 
-            color: '666666', 
+            fontSize: 14,
+            color: '666666',
             align: 'center',
             fill: { color: 'F5F5F5' },
             wrap: true
           });
         }
-
-        // Response count - positioned well above footer with more space
-        slide.addText(`Based on ${filteredData.responses.length} responses`, {
-          x: 0.5, 
-          y: 6.0,  // Moved up from 6.7 to create bigger gap
-          w: 9.0, 
-          h: 0.3,
-          fontSize: 12, 
-          color: '666666', 
-          align: 'center', 
-          italic: true
-        });
       }
 
       // Generate and download the file
