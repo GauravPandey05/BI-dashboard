@@ -42,13 +42,14 @@ export const loadMockData = (): SurveyData => {
       },
       {
         id: "Q4",
-        text: "How likely are you to agree with the following statements?",
-        type: "scale",
+        text: "When booking travel, which factor is most important to you?",
+        type: "single_choice",
         choices: [
-          { id: "Q4_1", text: "I prefer to book all-inclusive packages" },
-          { id: "Q4_2", text: "I like to plan my own itinerary" },
-          { id: "Q4_3", text: "Price is more important than destination" },
-          { id: "Q4_4", text: "I prefer luxury travel experiences" }
+          { id: "Q4_1", text: "Lowest price" },
+          { id: "Q4_2", text: "Flexible dates" },
+          { id: "Q4_3", text: "Direct flights" },
+          { id: "Q4_4", text: "Accommodation quality" },
+          { id: "Q4_5", text: "Travel insurance included" }
         ]
       },
       {
@@ -166,12 +167,7 @@ function generateMockResponses(count: number): Response[] { // <-- Fix type
         "Q1": q1Answer,
         "Q2": q2Answer,
         "Q3": q3Answer,
-        "Q4": {
-          "Q4_1": Math.floor(Math.random() * 5) + 1,
-          "Q4_2": Math.floor(Math.random() * 5) + 1,
-          "Q4_3": Math.floor(Math.random() * 5) + 1,
-          "Q4_4": Math.floor(Math.random() * 5) + 1
-        },
+        "Q4": `Q4_${Math.floor(Math.random() * 5) + 1}`,
         "Q5": `Q5_${Math.floor(Math.random() * 4) + 1}`,
         "Q6": q6Answer,
         "Q7": q7Answer,

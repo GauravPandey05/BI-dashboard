@@ -219,19 +219,25 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
               colors: CHART_COLORS,
               dataLabels: {
                 enabled: !tooManyCategories,
+                allowOverlap: false,
+                // Dynamically adjust label content and style for mobile
                 formatter: function (this: any): string {
                   const name = this.point.name || '';
                   const y = this.point.y;
                   const pct = this.point.percentage ? Math.round(this.point.percentage) : 0;
-                  const maxLen = getMaxLen(14, 20);
-                  return `${truncate(name, maxLen)}: ${y} (${pct}%)`;
+                  // On mobile, if too many slices, show only value and percent
+                  if (window.innerWidth < 640 && stats.labels.length > 4) {
+                    return `${y} (${pct}%)`;
+                  }
+                  const maxLen = window.innerWidth < 640 ? 10 : 20;
+                  return `${name.length > maxLen ? name.slice(0, maxLen - 1) + '…' : name}: ${y} (${pct}%)`;
                 },
-                distance: 20,
+                distance: window.innerWidth < 640 ? 28 : 20,
                 style: {
                   fontWeight: 'bold',
                   color: '#333',
                   textOutline: 'none',
-                  fontSize: window.innerWidth < 640 ? '10px' : '13px'
+                  fontSize: window.innerWidth < 480 ? '8px' : (window.innerWidth < 640 ? '9px' : '13px')
                 }
               }
             }
@@ -264,14 +270,18 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
                   plotOptions: {
                     pie: {
                       dataLabels: {
-                        style: { fontSize: '10px' },
-                        distance: 10,
+                        style: { fontSize: '8px' },
+                        distance: 32,
+                        allowOverlap: false,
                         formatter: function (this: any): string {
                           const name = this.point.name || '';
                           const y = this.point.y;
                           const pct = this.point.percentage ? Math.round(this.point.percentage) : 0;
-                          const maxLen = getMaxLen(14, 14);
-                          return `${truncate(name, maxLen)}: ${y} (${pct}%)`;
+                          if (stats.labels.length > 4) {
+                            return `${y} (${pct}%)`;
+                          }
+                          const maxLen = 10;
+                          return `${name.length > maxLen ? name.slice(0, maxLen - 1) + '…' : name}: ${y} (${pct}%)`;
                         }
                       }
                     }
@@ -280,7 +290,7 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
               },
               {
                 // Hide data labels if too many slices on small screens
-                condition: { maxWidth: 600, callback: () => stats.labels.length > 5 },
+                condition: { maxWidth: 600, callback: () => stats.labels.length > 6 },
                 chartOptions: {
                   plotOptions: {
                     pie: {
