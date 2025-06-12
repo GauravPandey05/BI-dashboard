@@ -111,79 +111,62 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
     };
 
     const counts: Record<string, number> = {};
-    let total = 0;
-    const responseCounted = new Set();
+    const respondentIds = new Set<string>();
     const isMultiSelect = question.type === 'multiple_choice';
 
-    if (question.choices) {
-      question.choices.forEach((choice: any) => {
-        counts[choice.id] = 0;
-      });
-    }
+    // Initialize counts
+    question.choices.forEach((choice: any) => {
+      counts[choice.id] = 0;
+    });
 
     data.responses.forEach((response: any) => {
       const answer = response.answers[question.id];
       const weight = Math.round(response.weight || 1);
 
+      // Only count respondents who actually answered (not undefined or empty array)
+      const answered =
+        (Array.isArray(answer) && answer.length > 0) ||
+        (typeof answer === 'string' && answer) ||
+        (typeof answer === 'object' && answer !== null && Object.keys(answer).length > 0);
+
+      if (!answered) return;
+
       if (Array.isArray(answer)) {
         answer.forEach((choice: any) => {
-          counts[choice] = Math.round((counts[choice] || 0) + weight);
+          counts[choice] = (counts[choice] || 0) + weight;
         });
-        if (!responseCounted.has(response.id)) {
-          total += weight;
-          responseCounted.add(response.id);
-        }
+        respondentIds.add(response.id);
       } else if (typeof answer === 'object' && answer !== null) {
         Object.entries(answer).forEach(([key, value]) => {
-          if (!counts[key]) counts[key] = 0;
-          counts[key] = Math.round(counts[key] + (Number(value) * weight));
+          counts[key] = (counts[key] || 0) + (Number(value) * weight);
         });
-        if (!responseCounted.has(response.id)) {
-          total += weight;
-          responseCounted.add(response.id);
-        }
+        respondentIds.add(response.id);
       } else if (answer) {
-        counts[answer] = Math.round((counts[answer] || 0) + weight);
-        if (!responseCounted.has(response.id)) {
-          total += weight;
-          responseCounted.add(response.id);
-        }
+        counts[answer] = (counts[answer] || 0) + weight;
+        respondentIds.add(response.id);
       }
     });
 
-    total = Math.round(total);
+    const total = respondentIds.size;
 
     const labels: string[] = [];
     const dataset: number[] = [];
     const detailedStats: Array<{label: string, count: number, percentage: number}> = [];
-    
-    if (question.choices) {
-      question.choices.forEach((choice: any) => {
-        const count = Math.round(counts[choice.id] || 0);
-        if (count > 0) {
-          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
-          labels.push(choice.text);
-          dataset.push(count);
-          detailedStats.push({
-            label: choice.text,
-            count: count,
-            percentage: percentage
-          });
-        }
-      });
-    } else {
-      Object.entries(counts).forEach(([key, value]) => {
-        const count = Math.round(value as number);
-        const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
-        labels.push(key);
+
+    question.choices.forEach((choice: any) => {
+      const count = Math.round(counts[choice.id] || 0);
+      // For multi-select, percentage is out of total respondents who answered the question
+      const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+      if (count > 0) {
+        labels.push(choice.text);
         dataset.push(count);
         detailedStats.push({
-          label: key,
+          label: choice.text,
           count: count,
           percentage: percentage
         });
-      });
-    }
+      }
+    });
 
     detailedStats.sort((a, b) => b.count - a.count);
 
@@ -465,12 +448,34 @@ const ChartCard = forwardRef<any, ChartCardProps>(({
             <div>
               <h4 className="text-sm font-semibold text-blue-900 mb-2">Summary</h4>
               <div className="space-y-1 text-xs sm:text-sm text-blue-800">
-                <div><strong>Total Responses:</strong> {stats.total}</div>
-                <div><strong>Question Type:</strong> {question.type?.replace('_', ' ') || 'Unknown'}</div>
-                <div><strong>Multi-select:</strong> {stats.isMultiSelect ? 'Yes' : 'No'}</div>
-                <div><strong>Answer Options:</strong> {stats.labels.length}</div>
-                <div><strong>Response Rate:</strong> {stats.total > 0 ? '100%' : '0%'}</div>
+                <div>
+                  <strong>Total Respondents:</strong> {stats.total}
+                </div>
+                {stats.isMultiSelect && (
+                  <div>
+                    <strong>Total Selections:</strong> {Object.values(stats.counts).reduce((a, b) => a + b, 0)}
+                  </div>
+                )}
+                <div>
+                  <strong>Question Type:</strong> {question.type?.replace('_', ' ') || 'Unknown'}
+                </div>
+                <div>
+                  <strong>Multi-select:</strong> {stats.isMultiSelect ? 'Yes' : 'No'}
+                </div>
+                <div>
+                  <strong>Answer Options:</strong> {stats.labels.length}
+                </div>
+                <div>
+                  <strong>Response Rate:</strong> {stats.total > 0 ? '100%' : '0%'}
+                </div>
               </div>
+              {stats.isMultiSelect && (
+                <div className="mt-2 text-xs text-blue-700">
+                  <em>
+                    Note: For multi-select questions, percentages are out of total respondents and may sum to more than 100%.
+                  </em>
+                </div>
+              )}
             </div>
             {/* Detailed Breakdown */}
             <div>
