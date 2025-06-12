@@ -38,29 +38,174 @@ interface ChatbotProps {
   onClose: () => void;
 }
 
-// Helper: Build a keyword map from your survey schema
+// Helper: Build a robust keyword map from your survey schema
 function buildKeywordMap(questions: Question[]) {
   const map: Record<string, { qid: string; cid: string }> = {};
   questions.forEach(q => {
     (q.choices ?? []).forEach(c => {
       const base = c.text.toLowerCase();
+      // Add base
       map[base] = { qid: q.id, cid: c.id };
-      map[base.replace(/[^a-z0-9 ]/g, '')] = { qid: q.id, cid: c.id };
+
+      // Add base without common suffixes
+      map[base.replace(/ only$/, '')] = { qid: q.id, cid: c.id }; // "International"
+      map[base.replace(/ trip$/, '')] = { qid: q.id, cid: c.id }; // "Adventure"
+      map[base.replace(/ vacation$/, '')] = { qid: q.id, cid: c.id }; // "Beach"
+      map[base.replace(/ tour$/, '')] = { qid: q.id, cid: c.id }; // "Cultural"
+      map[base.replace(/ break$/, '')] = { qid: q.id, cid: c.id }; // "City"
+      map[base.replace(/ recommendations$/, '')] = { qid: q.id, cid: c.id }; // "Friends and family"
+      map[base.replace(/s$/, '')] = { qid: q.id, cid: c.id }; // plural to singular
+      map[base.replace(/[^a-z0-9 ]/g, '')] = { qid: q.id, cid: c.id }; // remove punctuation
+
+      // Add question+choice
       map[(q.text + ' ' + c.text).toLowerCase()] = { qid: q.id, cid: c.id };
+
+      // Add synonyms and common user phrasings
+      if (base.includes('international')) {
+        map['international'] = { qid: q.id, cid: c.id };
+        map['international only'] = { qid: q.id, cid: c.id };
+        map['international travellers'] = { qid: q.id, cid: c.id };
+        map['international travelers'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('domestic')) {
+        map['domestic'] = { qid: q.id, cid: c.id };
+        map['domestic only'] = { qid: q.id, cid: c.id };
+        map['domestic travellers'] = { qid: q.id, cid: c.id };
+        map['domestic travelers'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('adventure')) {
+        map['adventure'] = { qid: q.id, cid: c.id };
+        map['adventure trip'] = { qid: q.id, cid: c.id };
+        map['adventure trips'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('beach')) {
+        map['beach'] = { qid: q.id, cid: c.id };
+        map['beach vacation'] = { qid: q.id, cid: c.id };
+        map['beach vacations'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('city')) {
+        map['city'] = { qid: q.id, cid: c.id };
+        map['city break'] = { qid: q.id, cid: c.id };
+        map['city breaks'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('cultural')) {
+        map['cultural'] = { qid: q.id, cid: c.id };
+        map['cultural tour'] = { qid: q.id, cid: c.id };
+        map['cultural tours'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('cruise')) {
+        map['cruise'] = { qid: q.id, cid: c.id };
+        map['cruises'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('friends and family')) {
+        map['friends and family'] = { qid: q.id, cid: c.id };
+        map['family'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('review')) {
+        map['review'] = { qid: q.id, cid: c.id };
+        map['review sites'] = { qid: q.id, cid: c.id };
+        map['reviews'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('travel website')) {
+        map['travel website'] = { qid: q.id, cid: c.id };
+        map['travel websites'] = { qid: q.id, cid: c.id };
+        map['websites'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('travel agent')) {
+        map['travel agent'] = { qid: q.id, cid: c.id };
+        map['travel agents'] = { qid: q.id, cid: c.id };
+        map['agents'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('social media')) {
+        map['social media'] = { qid: q.id, cid: c.id };
+        map['media'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('lowest price')) {
+        map['lowest price'] = { qid: q.id, cid: c.id };
+        map['price'] = { qid: q.id, cid: c.id };
+        map['cheapest'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('flexible dates')) {
+        map['flexible dates'] = { qid: q.id, cid: c.id };
+        map['flexible'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('direct flights')) {
+        map['direct flights'] = { qid: q.id, cid: c.id };
+        map['direct'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('accommodation quality')) {
+        map['accommodation quality'] = { qid: q.id, cid: c.id };
+        map['accommodation'] = { qid: q.id, cid: c.id };
+        map['quality'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('travel insurance')) {
+        map['travel insurance'] = { qid: q.id, cid: c.id };
+        map['insurance'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('guided tours')) {
+        map['guided tours'] = { qid: q.id, cid: c.id };
+        map['guided'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('self-guided exploration')) {
+        map['self-guided exploration'] = { qid: q.id, cid: c.id };
+        map['self-guided'] = { qid: q.id, cid: c.id };
+        map['exploration'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('mix of guided and self-guided')) {
+        map['mix of guided and self-guided'] = { qid: q.id, cid: c.id };
+        map['mix'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('resort/hotel stay with limited exploration')) {
+        map['resort/hotel stay with limited exploration'] = { qid: q.id, cid: c.id };
+        map['resort'] = { qid: q.id, cid: c.id };
+        map['hotel'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('very likely')) {
+        map['very likely'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('somewhat likely')) {
+        map['somewhat likely'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('not very likely')) {
+        map['not very likely'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('not at all likely')) {
+        map['not at all likely'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('yes')) {
+        map['yes'] = { qid: q.id, cid: c.id };
+      }
+      if (base.includes('no')) {
+        map['no'] = { qid: q.id, cid: c.id };
+      }
     });
   });
   return map;
 }
 
-// Helper: Extract all matching criteria from the user query
+// Helper: Extract all matching criteria from the user query (robust)
 function extractCriteriaFromQuery(query: string, keywordMap: Record<string, { qid: string; cid: string }>) {
   const found: Record<string, string> = {};
   const lower = query.toLowerCase();
+
+  // Prioritize exact and "only" matches first
   Object.entries(keywordMap).forEach(([key, { qid, cid }]) => {
-    if (key.length > 2 && lower.includes(key)) {
+    // Exact phrase "international only" or "only international"
+    if (
+      (key === 'international only' && (lower.includes('international only') || lower.includes('only international'))) ||
+      (key === 'domestic only' && (lower.includes('domestic only') || lower.includes('only domestic')))
+    ) {
       found[qid] = cid;
     }
   });
+
+  // Then do the rest as fallback, but don't overwrite already found qids
+  Object.entries(keywordMap).forEach(([key, { qid, cid }]) => {
+    if (key.length > 2 && lower.includes(key) && !found[qid]) {
+      found[qid] = cid;
+    }
+  });
+
   return found;
 }
 
@@ -298,15 +443,9 @@ Total responses: ${responses.length}${extra}
     if (splitDemo && Object.keys(criteria).length >= 1) {
       // Use all values for the demographic
       const demoValues = Array.from(new Set(responses.map(r => r.demographics[splitDemo.key])));
-      // If the base group is "domestic", support both "Domestic only" and "Both domestic and international"
-      let baseCriteria: { [questionId: string]: string | string[] } = { ...criteria };
-      if (
-        (splitDemo.key === 'ageGroup' || splitDemo.key === 'gender' || splitDemo.key === 'incomeRange' || splitDemo.key === 'region' || splitDemo.key === 'familyComposition') &&
-        (lowerMsg.includes('domestic') || lowerMsg.includes('domestically')) &&
-        criteria['Q1'] === 'Q1_1'
-      ) {
-        baseCriteria['Q1'] = ['Q1_1', 'Q1_3']; // Domestic only or Both
-      }
+      // Use ALL extracted criteria as base group (can be from multiple questions!)
+      const baseCriteria: { [questionId: string]: string | string[] } = { ...criteria };
+
       const { baseTotal, split } = getDemographicSplit(
         responses,
         splitDemo.key,
@@ -361,7 +500,7 @@ Total responses: ${responses.length}${extra}
             `${intersectionCount} also selected ${intersectionLabels.map(l => `"${l}"`).join(' and ')}. ` +
             `That is ${percentOfBase}% of "${baseLabel}" and ${percentOfAll}% of all respondents.\n\n` +
             `Insight: Among those who chose "${baseLabel}", ${intersectionLabels.slice(1).join(' and ')} are a notable preference.`
-        },
+        }
       ]);
       setMessage('');
       return;
